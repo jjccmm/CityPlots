@@ -16,7 +16,11 @@ Optional: Use the further style parameter in the `main` function to change color
 ## Example
 City Plots from OSM
 ![Example Plot](ExampleOutputs/Trump.png)
-_Example 1: The City Plot of Washington with the Oval Office in its center"_
+_Example 1: The City Plot of Washington with the Oval Office in its center_
+
+
+![Example Plot](ExampleOutputs/Home.png)
+_Example 2: Random address in London_
 
 ## Requirements
 The code was tested with Python 3.6, newer versions should also work. The code was tested for compliance with Windows machines. Use the provided [`requirements.txt`](requirements.txt) in the root directory of this repository, in order to install all required modules.
