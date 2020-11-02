@@ -1,0 +1,4 @@
+geopy==2.0.0
+matplotlib==3.2.1
+overpy==0.4
+utm==0.5.0
