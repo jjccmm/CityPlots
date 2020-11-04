@@ -14,7 +14,6 @@ Optional: Use the further style parameter in the `main` function to change color
 
 
 ## Example
-City Plots from OSM
 ![Example Plot](ExampleOutputs/Trump.png)
 _Example 1: The City Plot of Washington with the Oval Office in its center_
 

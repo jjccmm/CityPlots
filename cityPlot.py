@@ -140,7 +140,12 @@ out;""".format(*bbox))
 
         order_new = []
         next_id = 0
-        while len(order_new) < len(order):
+        cnt = len(order) * 3
+        # This loop tries to sort the ways of an relation so that they are connected in the right order
+        # However, if they have no common start/end Points the sorting fails or is incomplete.
+        # This rare cases this might result in wrong water plotting.
+        while len(order_new) < len(order) and cnt > 0:
+            cnt -= 1
             if len(order_new) == 0:
                 order[0]['used'] = True
                 order_new.append((order[0]['id'], 1))
@@ -182,7 +187,7 @@ out;""".format(*bbox))
         if way.id in added:
             continue
         if 'width' in way.tags.keys():
-            width = int(way.tags['width'])
+            width = float(way.tags['width'])
         elif 'natural' in way.tags.keys() and way.tags['natural'] == 'coastline':
             width = 4
         for node in way.nodes:
