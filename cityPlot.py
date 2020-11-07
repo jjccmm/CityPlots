@@ -30,7 +30,7 @@ def get_bounding_box(address):
     center = (wgs84_center.latitude, wgs84_center.longitude)
     utm_center = utm.from_latlon(wgs84_center.latitude, wgs84_center.longitude)
 
-    # define the top-right and bottom-left points of the visible quare in utm
+    # define the top-right and bottom-left points of the visible square in utm
     utm_top_right = (utm_center[0] + 1000*km_distance/2, utm_center[1] + 1000*km_distance/2, utm_center[2], utm_center[3])
     utm_bottom_left = (utm_center[0] - 1000*km_distance/2, utm_center[1] - 1000*km_distance/2, utm_center[2], utm_center[3])
     # add 1km buffer for the overpass query
@@ -72,7 +72,8 @@ def get_roads_from_overpass(bbox):
     ['highway' !~ 'rest_area']
     ['highway' !~ 'service']
     ['highway' !~ 'bus_stop']
-    ['highway' !~ 'platform'];
+    ['highway' !~ 'platform']
+    ['building:part' !~ 'yes'];
 );
 (._;>;);
 out;""".format(*bbox))
@@ -102,9 +103,13 @@ def get_rails_from_overpass(bbox):
 [timeout:900][out:json][bbox: {}, {}, {}, {}];
 (
   way
-    ['railway']
-    ['railway' !~ 'subway']
-    ['railway' !~ 'station'];
+  	['railway' = 'rail']
+  	['tunnel' !~ 'yes'];
+  way
+  	['railway' = 'subway'];
+  way['railway' = 'tram']
+   ['tunnel' !~ 'yes'];
+
 );
 (._;>;);
 out;""".format(*bbox))
@@ -276,19 +281,17 @@ def plot_map_data():
 
     for k, v in water.items():
         if v['w'] == 0:
-            ax.fill(v['e'], v['n'], color=water_color)
+            ax.fill(v['e'], v['n'], color=water_color, zorder=4)
         else:
-            ax.plot(v['e'], v['n'], color=water_color, linewidth=v['w'] * water_width_factor)
+            ax.plot(v['e'], v['n'], color=water_color, linewidth=v['w'] * water_width_factor, zorder=4)
     for k, v in islands.items():
-        ax.fill(v['e'], v['n'], color=plot_bg_color)
+        ax.fill(v['e'], v['n'], color=plot_bg_color, zorder=5)
     for k, v in rails.items():
         if v['type'] in rail_width.keys():
-            ax.plot(v['e'], v['n'], color=color_rails, linewidth=rail_width[v['type']])
-            # ax.plot(v['e'], v['n'], color=color_bg, linewidth=.5*rail_width[v['type']])
+            ax.plot(v['e'], v['n'], color=color_rails, linewidth=rail_width[v['type']], zorder=8)
     for k, v in roads.items():
         if v['type'] in road_width.keys():
-            ax.plot(v['e'], v['n'], color=road_color, linewidth=road_width[v['type']])
-
+            ax.plot(v['e'], v['n'], color=road_color, linewidth=road_width[v['type']], zorder=12)
 
     print('\tdone', flush=True)
 
@@ -310,10 +313,10 @@ def style_plot():
     ax.axis('square')
     ax.plot([bbox_utm[0], bbox_utm[0], bbox_utm[2], bbox_utm[2], bbox_utm[0]],
             [bbox_utm[1], bbox_utm[3], bbox_utm[3], bbox_utm[1], bbox_utm[1]],
-            linewidth=inner_gap_size, color=inner_gap_color)
+            linewidth=inner_gap_size, color=inner_gap_color, zorder=50)
     ax.set(xlim=(bbox_utm[0], bbox_utm[2]), ylim=(bbox_utm[1], bbox_utm[3]))
 
-    # ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=color_fg)
+    ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=color_fg)
 
     print('\tdone', flush=True)
 
@@ -331,7 +334,7 @@ if __name__ == '__main__':
     #                                          Define Location Input                                                   #
     ####################################################################################################################
     km_distance = 8  # default 8
-    locations = [{'name': 'Trump', 'address': 'Oval Office, Washington DC'},
+    locations = [{'name': 'Trump', 'address': 'München'},
                  {'name': 'Home', 'address': 'Onslow Sq 21, London, England'}]
 
     ####################################################################################################################
@@ -355,7 +358,7 @@ if __name__ == '__main__':
     plot_bg_color = color_bg        # default color_bg
     water_color = rgb(120, 120, 255)  # default rgb(120, 120, 255)
     road_color = color_fg           # default color_fg
-    color_rails = rgb(120, 120, 120)  # default rgb(120, 120, 120)
+    color_rails = road_color        # default rgb(120, 120, 120)
 
     water_width_factor = 0.1        # default 0.1 (as percentage of OSM width)
     road_width_max = 1.5            # default 1.5 (size as line width)
@@ -369,8 +372,8 @@ if __name__ == '__main__':
                   'pedestrian': road_width_max * 0.35,
                   'living_street': road_width_max * 0.3,
                   'cycleway': road_width_max * 0.15}
-    rail_width_max = .4             # default 2.5 (size as line width)
-    rail_width = {'rail': rail_width_max, 'subway': rail_width_max * 0.5}
+    rail_width_max = .2             # default 0.2 (size as line width)
+    rail_width = {'rail': rail_width_max, 'subway': rail_width_max * 0}
 
     print_title = False             # default False
     title_color = color_fg          # default color_fg
