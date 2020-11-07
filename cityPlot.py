@@ -45,6 +45,8 @@ def get_bounding_box(address):
 
 
 def get_roads_from_overpass(bbox):
+    if 'roads' in hide:
+        return {}
     print('\tLoad Roads from Overpass...', end='',  flush=True)
 
     # To get only roads within a city relation see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
@@ -72,7 +74,8 @@ def get_roads_from_overpass(bbox):
     ['highway' !~ 'rest_area']
     ['highway' !~ 'service']
     ['highway' !~ 'bus_stop']
-    ['highway' !~ 'platform'];
+    ['highway' !~ 'platform']
+    ['building:part' !~ 'yes'];
 );
 (._;>;);
 out;""".format(*bbox))
@@ -93,6 +96,8 @@ out;""".format(*bbox))
 
 
 def get_rails_from_overpass(bbox):
+    if 'rails' in hide:
+        return {}
     print('\tLoad Rails from Overpass...', end='',  flush=True)
 
     # For OSM relations see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
@@ -103,7 +108,6 @@ def get_rails_from_overpass(bbox):
 (
   way
     ['railway']
-    ['railway' !~ 'subway']
     ['railway' !~ 'station'];
 );
 (._;>;);
@@ -199,6 +203,8 @@ def concatenate_borders_as_utm(data, relation, borders, added):
 
 
 def get_water_from_overpass(bbox):
+    if 'water' in hide:
+        return {}, {}
     print('\tLoad Water from Overpass...', end='',  flush=True)
 
     # https://overpass-turbo.eu/#
@@ -271,24 +277,77 @@ out;""".format(*bbox))
     return water, islands
 
 
+def get_buildings_from_overpass(bbox):
+    if 'buildings' in hide:
+        return {}, {}
+    print('\tLoad Buildings from Overpass...', end='',  flush=True)
+
+    # https://overpass-turbo.eu/#
+    api = overpy.Overpass()
+    data = api.query("""
+[timeout:900][out:json][bbox: {}, {}, {}, {}];
+(
+  way
+  ['building'];
+  relation
+  ['building'];
+);
+(._;>;);
+out;""".format(*bbox))
+    print('\t data received...', end='', flush=True)
+    building = {}
+    yard = {}
+    added = set()
+
+    for relation in data.relations:
+        inner_borders, outer_borders = get_borders_from_relation(data, relation.members)
+        inner_border_sorted_loops = separate_and_sort_borders(inner_borders)
+        outer_borders_sorted_loops = separate_and_sort_borders(outer_borders)
+
+        for outer_loop in outer_borders_sorted_loops:
+            easts, norths = concatenate_borders_as_utm(data, relation, outer_loop, added)
+            building[int(relation.id) + len(building) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
+
+        for inner_loop in inner_border_sorted_loops:
+            if inner_loop:
+                easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
+                yard[int(relation.id) + len(yard) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
+
+    for way in data.ways:
+        norths = []
+        easts = []
+        if way.id in added:
+            continue
+        for node in way.nodes:
+            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
+            easts.append(utm_cord[0])
+            norths.append(utm_cord[1])
+        building[int(way.id)] = {'e': easts, 'n': norths}
+
+    print('\tdone', flush=True)
+    return building, yard
+
+
 def plot_map_data():
     print('\tPlotting...', end='', flush=True)
 
     for k, v in water.items():
         if v['w'] == 0:
-            ax.fill(v['e'], v['n'], color=water_color)
+            ax.fill(v['e'], v['n'], color=colors['water'])
         else:
-            ax.plot(v['e'], v['n'], color=water_color, linewidth=v['w'] * water_width_factor)
+            ax.plot(v['e'], v['n'], color=colors['water'], linewidth=v['w'] * water_width_factor)
     for k, v in islands.items():
         ax.fill(v['e'], v['n'], color=plot_bg_color)
     for k, v in rails.items():
-        if v['type'] in rail_width.keys():
-            ax.plot(v['e'], v['n'], color=color_rails, linewidth=rail_width[v['type']])
-            # ax.plot(v['e'], v['n'], color=color_bg, linewidth=.5*rail_width[v['type']])
+        if v['type'] not in hide and v['type'] in line_widths.keys():
+            ax.plot(v['e'], v['n'], color=colors[v['type']], linewidth=line_widths[v['type']])
     for k, v in roads.items():
-        if v['type'] in road_width.keys():
-            ax.plot(v['e'], v['n'], color=road_color, linewidth=road_width[v['type']])
-
+        if v['type'] not in hide and v['type'] in line_widths.keys():
+            ax.plot(v['e'], v['n'], color=colors[v['type']], linewidth=line_widths[v['type']])
+    for k, v in buildings.items():
+            ax.fill(v['e'], v['n'], color=colors['building'])
+    for k, v in yards.items():
+            ax.fill(v['e'], v['n'], color=plot_bg_color)
 
     print('\tdone', flush=True)
 
@@ -330,13 +389,17 @@ if __name__ == '__main__':
     ####################################################################################################################
     #                                          Define Location Input                                                   #
     ####################################################################################################################
-    km_distance = 8  # default 8
+    km_distance = 5  # default 8
     locations = [{'name': 'Trump', 'address': 'Oval Office, Washington DC'},
                  {'name': 'Home', 'address': 'Onslow Sq 21, London, England'}]
 
     ####################################################################################################################
     #                                          Define Style Parameter                                                  #
     ####################################################################################################################
+    hide = ['buildings', 'subway', 'tram']
+    custom_colors = {}
+    custom_line_widths = {}
+
     image_width_cm = 20             # default 20
     image_height_cm = 20            # default 20
 
@@ -354,12 +417,38 @@ if __name__ == '__main__':
 
     plot_bg_color = color_bg        # default color_bg
     water_color = rgb(120, 120, 255)  # default rgb(120, 120, 255)
+    building_color = rgb(220, 220, 220)  # default rgb(220, 220, 220)
     road_color = color_fg           # default color_fg
-    color_rails = rgb(120, 120, 120)  # default rgb(120, 120, 120)
+    rails_color = color_fg          # default rgb(120, 120, 120)
 
     water_width_factor = 0.1        # default 0.1 (as percentage of OSM width)
     road_width_max = 1.5            # default 1.5 (size as line width)
-    road_width = {'motorway': road_width_max, 'motorway_link': road_width_max * 0.9,
+    rail_width_max = .2             # default 2.5 (size as line width)
+
+    if 'roads' in custom_colors:
+        road_color = custom_colors['roads']
+    if 'rails' in custom_colors:
+        rails_color = custom_colors['rails']
+    colors = {'motorway': road_color, 'motorway_link': road_color,
+                  'trunk': road_color, 'trunk_link': road_color,
+                  'primary': road_color, 'primary_link': road_color,
+                  'secondary': road_color, 'secondary_link': road_color,
+                  'tertiary': road_color, 'tertiary_link': road_color,
+                  'unclassified': road_color,
+                  'residential': road_color,
+                  'pedestrian': road_color,
+                  'living_street': road_color,
+                  'cycleway': road_color,
+                  'rail': rails_color, 'subway': rails_color, 'tram': rails_color,
+                  'water': water_color,
+                  'building': building_color}
+
+
+    if 'roads' in custom_line_widths:
+        road_width_max = custom_line_widths['roads']
+    if 'rails' in custom_colors:
+        rail_width_max = custom_line_widths['rails']
+    line_widths = {'motorway': road_width_max, 'motorway_link': road_width_max * 0.9,
                   'trunk': road_width_max * 0.9, 'trunk_link': road_width_max * 0.8,
                   'primary': road_width_max * 0.8, 'primary_link': road_width_max * 0.7,
                   'secondary': road_width_max * 0.75, 'secondary_link': road_width_max * 0.65,
@@ -368,9 +457,11 @@ if __name__ == '__main__':
                   'residential': road_width_max * 0.4,
                   'pedestrian': road_width_max * 0.35,
                   'living_street': road_width_max * 0.3,
-                  'cycleway': road_width_max * 0.15}
-    rail_width_max = .4             # default 2.5 (size as line width)
-    rail_width = {'rail': rail_width_max, 'subway': rail_width_max * 0.5}
+                  'cycleway': road_width_max * 0.15,
+                  'rail': rail_width_max, 'subway': rail_width_max * 0.5, 'tram': rail_width_max * 0.3}
+
+    colors.update(custom_colors)
+    line_widths.update(custom_line_widths)
 
     print_title = False             # default False
     title_color = color_fg          # default color_fg
@@ -391,6 +482,7 @@ if __name__ == '__main__':
         bbox_wgs84, bbox_utm = get_bounding_box(location['address'])
         roads = get_roads_from_overpass(bbox_wgs84)
         water, islands = get_water_from_overpass(bbox_wgs84)
+        buildings, yards = get_buildings_from_overpass(bbox_wgs84)
         rails = get_rails_from_overpass(bbox_wgs84)
 
         plot_map_data()
