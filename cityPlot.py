@@ -20,7 +20,7 @@ def generate_plot_skeleton():
     return fig, ax
 
 
-def get_bounding_box(address):
+def get_bounding_box(address, km_distance):
     print('\tGet Bounding Box for "%s"...' % address, end='',  flush=True)
     geo_locator = Nominatim(user_agent="City Location Maps")
     wgs84_center = geo_locator.geocode(address)
@@ -82,6 +82,38 @@ out;""".format(*bbox))
         roads[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['highway']}
     print('\tdone')
     return roads
+
+
+
+def get_rails_from_overpass(bbox):
+    print('\tLoad Rails from Overpass...', end='',  flush=True)
+
+    # For OSM relations see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
+    # https://overpass-turbo.eu/#
+    api = overpy.Overpass()
+    data = api.query("""
+[timeout:900][out:json][bbox: {}, {}, {}, {}];
+(
+  way
+    ['railway']
+    ['railway' !~ 'station'];
+);
+(._;>;);
+out;""".format(*bbox))
+    # ['railway' !~ 'subway']
+    print('\t data received...', end='', flush=True)
+
+    rails = {}
+    for way in data.ways:
+        norths = []
+        easts = []
+        for node in way.nodes:
+            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
+            easts.append(utm_cord[0])
+            norths.append(utm_cord[1])
+        rails[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['railway']}
+    print('\tdone')
+    return rails
 
 
 def get_water_from_overpass(bbox):
@@ -202,14 +234,18 @@ out;""".format(*bbox))
 def plot_map_data():
     print('\tPlotting...', end='', flush=True)
 
-    for k, v in roads.items():
-        if v['type'] in road_width.keys():
-            ax.plot(v['e'], v['n'], color=color_roads, linewidth=road_width[v['type']])
     for k, v in water.items():
         if v['w'] == 0:
             ax.fill(v['e'], v['n'], color=color_water)
         else:
             ax.plot(v['e'], v['n'], color=color_water, linewidth=v['w'] * water_width_factor)
+    for k, v in roads.items():
+        if v['type'] in road_width.keys():
+            ax.plot(v['e'], v['n'], color=color_roads, linewidth=road_width[v['type']])
+    for k, v in rails.items():
+        if v['type'] in rail_width.keys():
+            ax.plot(v['e'], v['n'], color=color_rails, linewidth=rail_width[v['type']])
+            # ax.plot(v['e'], v['n'], color=color_bg, linewidth=.6*rail_width[v['type']])
 
     print('\tdone', flush=True)
 
@@ -246,11 +282,10 @@ def save_plot():
 
 if __name__ == '__main__':
 
-    # Define Input
     locations = [{'name': 'Trump', 'address': 'Oval Office, Washington'},
-                 {'name': 'Home', 'address': 'Onslow Sq 21, London, England'},]
+                 {'name': 'Home', 'address': 'Onslow Sq 21, London, England', 'distance': 5}]
 
-    km_distance = 8
+    default_distance = 8
 
     # Define Style
     image_width_cm = 20
@@ -271,6 +306,7 @@ if __name__ == '__main__':
     plot_bg_color = color_bg
     color_water = rgb(120, 120, 255)
     color_roads = color_fg
+    color_rails = rgb(120, 120, 120)
 
     water_width_factor = 0.1
     road_width_max = 1.5  # line width
@@ -285,6 +321,9 @@ if __name__ == '__main__':
                   'living_street': road_width_max * 0.3,
                   'cycleway': road_width_max * 0.15}
 
+    rail_width_max = 2.5  # line width
+    rail_width = {'rail': rail_width_max, 'subway': road_width_max * 0.5}
+
     print_title = False
     color_title = color_fg
     title_space = 0.1
@@ -297,8 +336,9 @@ if __name__ == '__main__':
 
         fig, ax = generate_plot_skeleton()
 
-        bbox_wgs84, bbox_utm = get_bounding_box(location['address'])
+        bbox_wgs84, bbox_utm = get_bounding_box(location['address'], location['distance'] if 'distance' in location else default_distance)
         roads = get_roads_from_overpass(bbox_wgs84)
+        rails = get_rails_from_overpass(bbox_wgs84)
         water = get_water_from_overpass(bbox_wgs84)
 
         plot_map_data()
