@@ -92,6 +92,37 @@ out;""".format(*bbox))
     return roads
 
 
+def get_rails_from_overpass(bbox):
+    print('\tLoad Rails from Overpass...', end='',  flush=True)
+
+    # For OSM relations see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
+    # https://overpass-turbo.eu/#
+    api = overpy.Overpass()
+    data = api.query("""
+[timeout:900][out:json][bbox: {}, {}, {}, {}];
+(
+  way
+    ['railway']
+    ['railway' !~ 'subway']
+    ['railway' !~ 'station'];
+);
+(._;>;);
+out;""".format(*bbox))
+    print('\t data received...', end='', flush=True)
+
+    rails = {}
+    for way in data.ways:
+        norths = []
+        easts = []
+        for node in way.nodes:
+            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
+            easts.append(utm_cord[0])
+            norths.append(utm_cord[1])
+        rails[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['railway']}
+    print('\tdone')
+    return rails
+
+
 def get_borders_from_relation(data, relation_members):
     outer_borders = []
     inner_borders = []
@@ -243,9 +274,6 @@ out;""".format(*bbox))
 def plot_map_data():
     print('\tPlotting...', end='', flush=True)
 
-    for k, v in roads.items():
-        if v['type'] in road_width.keys():
-            ax.plot(v['e'], v['n'], color=road_color, linewidth=road_width[v['type']])
     for k, v in water.items():
         if v['w'] == 0:
             ax.fill(v['e'], v['n'], color=water_color)
@@ -253,6 +281,13 @@ def plot_map_data():
             ax.plot(v['e'], v['n'], color=water_color, linewidth=v['w'] * water_width_factor)
     for k, v in islands.items():
         ax.fill(v['e'], v['n'], color=plot_bg_color)
+    for k, v in rails.items():
+        if v['type'] in rail_width.keys():
+            ax.plot(v['e'], v['n'], color=color_rails, linewidth=rail_width[v['type']])
+            # ax.plot(v['e'], v['n'], color=color_bg, linewidth=.5*rail_width[v['type']])
+    for k, v in roads.items():
+        if v['type'] in road_width.keys():
+            ax.plot(v['e'], v['n'], color=road_color, linewidth=road_width[v['type']])
 
 
     print('\tdone', flush=True)
@@ -278,7 +313,7 @@ def style_plot():
             linewidth=inner_gap_size, color=inner_gap_color)
     ax.set(xlim=(bbox_utm[0], bbox_utm[2]), ylim=(bbox_utm[1], bbox_utm[3]))
 
-    ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=color_fg)
+    # ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=color_fg)
 
     print('\tdone', flush=True)
 
@@ -320,6 +355,7 @@ if __name__ == '__main__':
     plot_bg_color = color_bg        # default color_bg
     water_color = rgb(120, 120, 255)  # default rgb(120, 120, 255)
     road_color = color_fg           # default color_fg
+    color_rails = rgb(120, 120, 120)  # default rgb(120, 120, 120)
 
     water_width_factor = 0.1        # default 0.1 (as percentage of OSM width)
     road_width_max = 1.5            # default 1.5 (size as line width)
@@ -333,6 +369,8 @@ if __name__ == '__main__':
                   'pedestrian': road_width_max * 0.35,
                   'living_street': road_width_max * 0.3,
                   'cycleway': road_width_max * 0.15}
+    rail_width_max = .4             # default 2.5 (size as line width)
+    rail_width = {'rail': rail_width_max, 'subway': rail_width_max * 0.5}
 
     print_title = False             # default False
     title_color = color_fg          # default color_fg
@@ -353,6 +391,7 @@ if __name__ == '__main__':
         bbox_wgs84, bbox_utm = get_bounding_box(location['address'])
         roads = get_roads_from_overpass(bbox_wgs84)
         water, islands = get_water_from_overpass(bbox_wgs84)
+        rails = get_rails_from_overpass(bbox_wgs84)
 
         plot_map_data()
         style_plot()
