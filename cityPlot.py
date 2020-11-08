@@ -48,16 +48,12 @@ def get_bounding_box(address):
     return bbox_wgs84, bbox_utm
 
 
-def get_roads_from_overpass(bbox):
-    if 'roads' in hide:
-        return {}
-    print('\tLoad Roads from Overpass...', end='', flush=True)
-
+def query_osm_data_via_overpass(query_type):
     # To get only roads within a city relation see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
     # https://overpass-turbo.eu/#
+    print('\t query overpass...', end='', flush=True)
 
-    api = overpy.Overpass()
-    data = api.query("""
+    queries = {'roads': """
 [timeout:900][out:json][bbox: {}, {}, {}, {}];
 (
   way
@@ -82,32 +78,37 @@ def get_roads_from_overpass(bbox):
     ['building:part' !~ 'yes'];
 );
 (._;>;);
-out;""".format(*bbox))
-    print('\t data received...', end='', flush=True)
+out;""",
+               'water': """
+[timeout:900][out:json][bbox: {}, {}, {}, {}];
+(
+  way
+  ['natural' = 'water']
+  ['amenity' !~ 'fountain'];
+  way
+  ['water'];
+  relation
+  ['natural' = 'water']
+  ['amenity' !~ 'fountain'];
+  relation
+  ['water'];
+  way
+  ['waterway' = 'riverbank']
+  ['tunnel' !~ 'yes'];
+  relation
+  ['waterway' = 'riverbank']
+  ['tunnel' !~ 'yes'];
+  way
+  ['waterway' = 'river']
+  ['tunnel' !~ 'yes']
+  ['width'];
+  way
+  ['natural' = 'coastline'];
 
-    # create road dict with east and north coordinates in utm and the highway type for each way received from overpass
-    roads = {}
-    for way in data.ways:
-        norths = []
-        easts = []
-        for node in way.nodes:
-            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
-            easts.append(utm_cord[0])
-            norths.append(utm_cord[1])
-        roads[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['highway']}
-    print('\tdone')
-    return roads
-
-
-def get_rails_from_overpass(bbox):
-    if 'rails' in hide:
-        return {}
-    print('\tLoad Rails from Overpass...', end='', flush=True)
-
-    # For OSM relations see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
-    # https://overpass-turbo.eu/#
-    api = overpy.Overpass()
-    data = api.query("""
+);
+(._;>;);
+out;""",
+               'rails': """
 [timeout:900][out:json][bbox: {}, {}, {}, {}];
 (
   way
@@ -120,17 +121,61 @@ def get_rails_from_overpass(bbox):
 
 );
 (._;>;);
-out;""".format(*bbox))
+out;""",
+               'buildings': """
+[timeout:900][out:json][bbox: {}, {}, {}, {}];
+(
+  way
+  ['building'];
+  relation
+  ['building'];
+);
+(._;>;);
+out;"""}
+
+
+    api = overpy.Overpass()
+    data = api.query(queries[query_type].format(*bbox_wgs84))
+
     print('\t data received...', end='', flush=True)
+    return data
+
+
+def convert_way_to_utm(way):
+    norths = []
+    easts = []
+    for node in way.nodes:
+        utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
+        easts.append(utm_cord[0])
+        norths.append(utm_cord[1])
+    return easts, norths
+
+
+def process_roads():
+    if 'roads' in hide:
+        return {}
+    print('\tRoads:', end='', flush=True)
+
+    data = query_osm_data_via_overpass('roads')
+
+    roads = {}
+    for way in data.ways:
+        easts, norths = convert_way_to_utm(way)
+        roads[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['highway']}
+    print('\tdone')
+    return roads
+
+
+def get_rails_from_overpass():
+    if 'rails' in hide:
+        return {}
+    print('\tRails:', end='', flush=True)
+
+    data = query_osm_data_via_overpass('rails')
 
     rails = {}
     for way in data.ways:
-        norths = []
-        easts = []
-        for node in way.nodes:
-            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
-            easts.append(utm_cord[0])
-            norths.append(utm_cord[1])
+        easts, norths = convert_way_to_utm(way)
         rails[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['railway']}
     print('\tdone')
     return rails
@@ -214,40 +259,10 @@ def concatenate_borders_as_utm(data, relation, borders, added):
 def get_water_from_overpass(bbox):
     if 'water' in hide:
         return {}, {}
-    print('\tLoad Water from Overpass...', end='', flush=True)
+    print('\tWater:', end='', flush=True)
 
-    # https://overpass-turbo.eu/#
-    api = overpy.Overpass()
-    data = api.query("""
-[timeout:900][out:json][bbox: {}, {}, {}, {}];
-(
-  way
-  ['natural' = 'water']
-  ['amenity' !~ 'fountain'];
-  way
-  ['water'];
-  relation
-  ['natural' = 'water']
-  ['amenity' !~ 'fountain'];
-  relation
-  ['water'];
-  way
-  ['waterway' = 'riverbank']
-  ['tunnel' !~ 'yes'];
-  relation
-  ['waterway' = 'riverbank']
-  ['tunnel' !~ 'yes'];
-  way
-  ['waterway' = 'river']
-  ['tunnel' !~ 'yes']
-  ['width'];
-  way
-  ['natural' = 'coastline'];
+    data = query_osm_data_via_overpass('water')
 
-);
-(._;>;);
-out;""".format(*bbox))
-    print('\t data received...', end='', flush=True)
     water = {}
     islands = {}
     added = set()
@@ -262,24 +277,19 @@ out;""".format(*bbox))
             water[int(relation.id) + len(water) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
 
         for inner_loop in inner_border_sorted_loops:
-            if inner_loop:
-                easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
-                islands[int(relation.id) + len(islands) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
+            easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
+            islands[int(relation.id) + len(islands) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
 
     for way in data.ways:
-        norths = []
-        easts = []
-        width = 0
         if way.id in added:
             continue
         if 'width' in way.tags.keys():
             width = float(way.tags['width'])
         elif 'natural' in way.tags.keys() and way.tags['natural'] == 'coastline':
             width = 4
-        for node in way.nodes:
-            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
-            easts.append(utm_cord[0])
-            norths.append(utm_cord[1])
+        else:
+            width = 0
+        easts, norths = convert_way_to_utm(way)
         water[int(way.id)] = {'e': easts, 'n': norths, 'w': width}
 
     print('\tdone', flush=True)
@@ -293,16 +303,7 @@ def get_buildings_from_overpass(bbox):
 
     # https://overpass-turbo.eu/#
     api = overpy.Overpass()
-    data = api.query("""
-[timeout:900][out:json][bbox: {}, {}, {}, {}];
-(
-  way
-  ['building'];
-  relation
-  ['building'];
-);
-(._;>;);
-out;""".format(*bbox))
+    data = api.query(.format(*bbox))
     print('\t data received...', end='', flush=True)
     building = {}
     yard = {}
@@ -323,14 +324,9 @@ out;""".format(*bbox))
                 yard[int(relation.id) + len(yard) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
 
     for way in data.ways:
-        norths = []
-        easts = []
         if way.id in added:
             continue
-        for node in way.nodes:
-            utm_cord = utm.from_latlon(float(node.lat), float(node.lon))
-            easts.append(utm_cord[0])
-            norths.append(utm_cord[1])
+        easts, norths = convert_way_to_utm(way)
         building[int(way.id)] = {'e': easts, 'n': norths}
 
     print('\tdone', flush=True)
@@ -488,10 +484,10 @@ if __name__ == '__main__':
         fig, ax = generate_plot_skeleton()
 
         bbox_wgs84, bbox_utm = get_bounding_box(location['address'])
-        roads = get_roads_from_overpass(bbox_wgs84)
-        water, islands = get_water_from_overpass(bbox_wgs84)
-        buildings, yards = get_buildings_from_overpass(bbox_wgs84)
-        rails = get_rails_from_overpass(bbox_wgs84)
+        roads = process_roads()
+        water, islands = get_water_from_overpass()
+        buildings, yards = get_buildings_from_overpass()
+        rails = get_rails_from_overpass()
 
         plot_map_data()
         style_plot()
