@@ -1,4 +1,5 @@
 # City Plots from OSM 
+<img align="right" src="ExampleOutputs/London.png" width="250"/>
 This tool creates beautiful city street plots as png-files for any given address.
 
 * [`geopy`](https://geopy.readthedocs.io/): Converts the address to a location
@@ -6,7 +7,7 @@ This tool creates beautiful city street plots as png-files for any given address
 * [`utm`](https://pypi.org/project/utm/): Converts the wgs84 coordinates to utm coordinates
 * [`matplotlib`](https://matplotlib.org/): Plots the utm coordinates
 
-<img align="right" src="ExampleOutputs/London.png" width="200"/>
+
 
 ## How to use
 ### Location
