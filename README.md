@@ -9,12 +9,12 @@ This tool creates beautiful city street plots as png-files for any given address
 
 
 ## How to use
-###Location
+### Location
 Edit the `locations` dict in `custom_params` and insert the locations you want to have in the center:
  
 `custom_params = {'locations': [{'name': 'Your_Location_Name', 'address': 'Your_Location_Address'}]}`
 
-###Style
+### Style
 You can add further parameters to `custom_params` in order to overwrite the default values.  
 E.g. to plot the roads in red and set the size to 3 km by 3 km add: 
 
@@ -23,7 +23,7 @@ E.g. to plot the roads in red and set the size to 3 km by 3 km add:
 `'km_distance_north': 3`
 
 Have a look at the [parameter description](#parameter-description) and `params_l1-3` to see what parameters exist.         
-###Hide 
+### Hide 
 Use the `hide` list to specify elements you do not want to plot.  
 E.g. to hide buildings, subway, tram and service-roads use:   
 `hide = ['buildings', 'subway', 'tram', 'service']`  
@@ -38,7 +38,7 @@ _Img 1: Random address in London_
 ![Example Plot2](ExampleOutputs/Trump.png)
 _Img 2: The City Plot (including buildings) of Washington D.C. with the Oval Office in its center_
 
-##Data Limitations
+## Data Limitations
 Be aware and grateful that the [OSM-data](https://www.openstreetmap.org) and the [Overpass-Turbo](https://overpass-turbo.eu/) API is free of charge. 
 This is only possible due to donation. So if you become a heavy user you should consider supporting them: [OSM-Donation](https://wiki.openstreetmap.org/wiki/Donations)
 
@@ -46,7 +46,7 @@ Too many or too large queries to the Overpass-Turbo API will get blocked. As a r
 
 If you intend to produce plots of a much greater area you should consider getting your data via [Planet-OSM](https://wiki.openstreetmap.org/wiki/Planet.osm).
 
-##Parameter Description
+## Parameter Description
 You can change several style parameters regarding color, size, thickness and title. The following image should help you to find the parameters you want to tune. 
 
 ![Example Plot3](ExampleOutputs/ParameterExample.png)
