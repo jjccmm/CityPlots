@@ -1,5 +1,5 @@
 # City Plots from OSM 
-<img align="right" src="ExampleOutputs/London.png" width="220"/>
+<img align="right" src="ExampleOutputs/London.png" width="190"/>
 This tool creates beautiful city street plots as png-files for any given address.
 
 * [`geopy`](https://geopy.readthedocs.io/): Converts the address to a location
