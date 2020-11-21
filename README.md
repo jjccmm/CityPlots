@@ -6,7 +6,7 @@ This tool creates beautiful city street plots as png-files for any given address
 * [`utm`](https://pypi.org/project/utm/): Converts the wgs84 coordinates to utm coordinates
 * [`matplotlib`](https://matplotlib.org/): Plots the utm coordinates
 
-
+<img src="ExampleOutputs/London.png" width="200"/>
 
 ## How to use
 ### Location
