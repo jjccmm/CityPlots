@@ -304,6 +304,7 @@ def process_water():
 def process_buildings():
     if 'buildings' in hide:
         return {}, {}
+    print('\tBuildings:', end='', flush=True)
 
     data = query_osm_data_via_overpass('buildings')
     print('\tStart converting...', end='', flush=True)
@@ -340,22 +341,24 @@ def plot_map_data():
 
     for k, v in water.items():
         if v['w'] == 0:
-            ax.fill(v['e'], v['n'], color=params_l3_c['water'], zorder=2)
+            ax.fill(v['e'], v['n'], color=params_l3['water_c'], zorder=2)
         else:
-            ax.plot(v['e'], v['n'], color=params_l3_c['water'], linewidth=v['w'] * params_l2['water_width_factor'],
+            ax.plot(v['e'], v['n'], color=params_l3['water_c'], linewidth=v['w'] * params_l2['water_width_factor'],
                     zorder=2)
     for k, v in islands.items():
         ax.fill(v['e'], v['n'], color=params_l2['plot_bg_color'], zorder=3)
     for k, v in rails.items():
-        if v['type'] not in hide and v['type'] in params_l3_lw.keys():
-            ax.plot(v['e'], v['n'], color=params_l3_c[v['type']], linewidth=params_l3_lw[v['type']], zorder=5)
+        if v['type'] not in hide and '{}_lw'.format(v['type']) in params_l3.keys():
+            ax.plot(v['e'], v['n'], color=params_l3['{}_c'.format(v['type'])],
+                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=5)
     for k, v in roads.items():
-        if v['type'] not in hide and v['type'] in params_l3_lw.keys():
-            ax.plot(v['e'], v['n'], color=params_l3_c[v['type']], linewidth=params_l3_lw[v['type']], zorder=7)
+        if v['type'] not in hide and '{}_lw'.format(v['type']) in params_l3.keys():
+            ax.plot(v['e'], v['n'], color=params_l3['{}_c'.format(v['type'])],
+                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=9)
     for k, v in buildings.items():
-        ax.fill(v['e'], v['n'], color=params_l3_c['building'], zorder=9)
+        ax.fill(v['e'], v['n'], color=params_l3['building_c'], zorder=7)
     for k, v in yards.items():
-        ax.fill(v['e'], v['n'], color=params_l2['plot_bg_color'], zorder=10)
+        ax.fill(v['e'], v['n'], color=params_l2['plot_bg_color'], zorder=8)
 
     print('\tdone', flush=True)
 
@@ -396,7 +399,8 @@ def save_plot():
 if __name__ == '__main__':
 
     # use 'custom_params' to override the default params in the following param dicts
-    custom_params = {'road_color': rgb(255, 0, 0)}
+    custom_params = {'locations': [{'name': 'Your_Location_Name', 'address': 'Your_Location_Address'}],
+                     'color_fg': rgb(255, 30, 30)}
     # use 'hide' to hide elements
     hide = ['buildings', 'subway', 'tram', 'service']
 
@@ -404,11 +408,11 @@ if __name__ == '__main__':
     #                                       Level One Parameter                                                        #
     ####################################################################################################################
     params_l1 = {'locations': [{'name': 'Trump', 'address': 'Oval Office, Washington DC'},
-                               {'name': 'Home', 'address': 'Onslow Sq 21, London, England'}],
-                 'km_distance_east': 5,  # default 8
-                 'km_distance_north': 5,  # default 8
-                 'color_fg': rgb(30, 30, 30),  # default rgb(30, 30, 30)
-                 'color_bg': rgb(255, 255, 255)}  # default rgb(255, 255, 255)
+                               {'name': 'London', 'address': 'Onslow Sq 21, London, England'}],
+                 'km_distance_east': 8,
+                 'km_distance_north': 8,
+                 'color_fg': rgb(30, 30, 30),
+                 'color_bg': rgb(255, 255, 255)}
     params_l1.update(custom_params)
     ####################################################################################################################
     #                                       Level Two Parameter                                                        #
@@ -439,42 +443,45 @@ if __name__ == '__main__':
     ####################################################################################################################
     #                                    Level Three Parameter: Color                                                  #
     ####################################################################################################################
-    params_l3_c = {'motorway': params_l2['road_color'], 'motorway_link': params_l2['road_color'],
-                   'trunk': params_l2['road_color'], 'trunk_link': params_l2['road_color'],
-                   'primary': params_l2['road_color'], 'primary_link': params_l2['road_color'],
-                   'secondary': params_l2['road_color'], 'secondary_link': params_l2['road_color'],
-                   'tertiary': params_l2['road_color'], 'tertiary_link': params_l2['road_color'],
-                   'unclassified': params_l2['road_color'],
-                   'residential': params_l2['road_color'],
-                   'pedestrian': params_l2['road_color'],
-                   'living_street': params_l2['road_color'],
-                   'cycleway': params_l2['road_color'],
-                   'service': params_l2['road_color'],
-                   'rail': params_l2['rail_color'],
-                   'subway': params_l2['rail_color'],
-                   'tram': params_l2['rail_color'],
-                   'water': params_l2['water_color'],
-                   'building': params_l2['building_color']}
-    params_l3_c.update(custom_params)
+    params_l3 = {'motorway_c': params_l2['road_color'], 'motorway_link_c': params_l2['road_color'],
+                 'trunk_c': params_l2['road_color'], 'trunk_link_c': params_l2['road_color'],
+                 'primary_c': params_l2['road_color'], 'primary_link_c': params_l2['road_color'],
+                 'secondary_c': params_l2['road_color'], 'secondary_link_c': params_l2['road_color'],
+                 'tertiary_c': params_l2['road_color'], 'tertiary_link_c': params_l2['road_color'],
+                 'unclassified_c': params_l2['road_color'],
+                 'residential_c': params_l2['road_color'],
+                 'pedestrian_c': params_l2['road_color'],
+                 'living_street_c': params_l2['road_color'],
+                 'cycleway_c': params_l2['road_color'],
+                 'service_c': params_l2['road_color'],
+                 'rail_c': params_l2['rail_color'],
+                 'subway_c': params_l2['rail_color'],
+                 'tram_c': params_l2['rail_color'],
+                 'water_c': params_l2['water_color'],
+                 'building_c': params_l2['building_color']}
+    params_l3.update(custom_params)
     ####################################################################################################################
     #                                    Level Three Parameter: Line width                                             #
     ####################################################################################################################
-    params_l3_lw = {'motorway': params_l2['road_width_max'], 'motorway_link': params_l2['road_width_max'] * 0.9,
-                    'trunk': params_l2['road_width_max'] * 0.9, 'trunk_link': params_l2['road_width_max'] * 0.8,
-                    'primary': params_l2['road_width_max'] * 0.8, 'primary_link': params_l2['road_width_max'] * 0.7,
-                    'secondary': params_l2['road_width_max'] * 0.75,
-                    'secondary_link': params_l2['road_width_max'] * 0.65,
-                    'tertiary': params_l2['road_width_max'] * 0.75, 'tertiary_link': params_l2['road_width_max'] * 0.65,
-                    'unclassified': params_l2['road_width_max'] * 0.4,
-                    'residential': params_l2['road_width_max'] * 0.4,
-                    'pedestrian': params_l2['road_width_max'] * 0.35,
-                    'living_street': params_l2['road_width_max'] * 0.3,
-                    'service': params_l2['road_width_max'] * 0.2,
-                    'cycleway': params_l2['road_width_max'] * 0.15,
-                    'rail': params_l2['rail_width_max'],
-                    'subway': params_l2['rail_width_max'] * 0.5,
-                    'tram': params_l2['rail_width_max'] * 0.3}
-    params_l3_lw.update(custom_params)
+    line_widths = {'motorway_lw': params_l2['road_width_max'], 'motorway_link_lw': params_l2['road_width_max'] * 0.9,
+                   'trunk_lw': params_l2['road_width_max'] * 0.9, 'trunk_link_lw': params_l2['road_width_max'] * 0.8,
+                   'primary_lw': params_l2['road_width_max'] * 0.8,
+                   'primary_link_lw': params_l2['road_width_max'] * 0.7,
+                   'secondary_lw': params_l2['road_width_max'] * 0.75,
+                   'secondary_link_lw': params_l2['road_width_max'] * 0.65,
+                   'tertiary_lw': params_l2['road_width_max'] * 0.75,
+                   'tertiary_link_lw': params_l2['road_width_max'] * 0.65,
+                   'unclassified_lw': params_l2['road_width_max'] * 0.4,
+                   'residential_lw': params_l2['road_width_max'] * 0.4,
+                   'pedestrian_lw': params_l2['road_width_max'] * 0.35,
+                   'living_street_lw': params_l2['road_width_max'] * 0.3,
+                   'service_lw': params_l2['road_width_max'] * 0.2,
+                   'cycleway_lw': params_l2['road_width_max'] * 0.15,
+                   'rail_lw': params_l2['rail_width_max'],
+                   'subway_lw': params_l2['rail_width_max'] * 0.5,
+                   'tram_lw': params_l2['rail_width_max'] * 0.3}
+    params_l3.update(line_widths)
+    params_l3.update(custom_params)
     ####################################################################################################################
     #                                                End of Input                                                      #
     ####################################################################################################################
