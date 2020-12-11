@@ -1,9 +1,13 @@
 # coding=utf-8
 import utm
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 from geopy.geocoders import Nominatim
 import overpy
 import random
+import numpy as np
+import datetime
+from pathlib import Path
 
 
 def rgb(r, g, b):
@@ -52,6 +56,8 @@ def get_bounding_box(address):
     return bbox_wgs84, bbox_utm
 
 
+    # ['highway' !~ 'footway']
+    # ['highway' !~ 'track']
 def query_osm_data_via_overpass(query_type):
     # To get only roads within a city relation see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
     # https://overpass-turbo.eu/#
@@ -64,7 +70,6 @@ def query_osm_data_via_overpass(query_type):
     ['highway']
     ['highway' !~ 'steps']
     ['highway' !~ 'path']
-    ['highway' !~ 'track']
     ['highway' !~ 'raceway']
     ['highway' !~ 'road']
     ['highway' !~ 'bridleway']
@@ -74,7 +79,6 @@ def query_osm_data_via_overpass(query_type):
     ['highway' !~ 'elevator']
     ['highway' !~ 'passing_place']
     ['highway' !~ 'bus_guideway']
-    ['highway' !~ 'footway']
     ['highway' !~ 'rest_area']
     ['highway' !~ 'bus_stop']
     ['highway' !~ 'platform']
@@ -289,6 +293,8 @@ def process_water():
         if way.id in added:
             continue
         if 'width' in way.tags.keys():
+            if not way.tags['width'].isdigit():
+                break
             width = float(way.tags['width'])
         elif 'natural' in way.tags.keys() and way.tags['natural'] == 'coastline':
             width = 4
@@ -354,7 +360,7 @@ def plot_map_data():
     for k, v in roads.items():
         if v['type'] not in hide and '{}_lw'.format(v['type']) in params_l3.keys():
             ax.plot(v['e'], v['n'], color=params_l3['{}_c'.format(v['type'])],
-                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=9)
+                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=7 if v['type'] == 'footway' or v['type'] == 'track' else 9)
     for k, v in buildings.items():
         ax.fill(v['e'], v['n'], color=params_l3['building_c'], zorder=7)
     for k, v in yards.items():
@@ -384,7 +390,18 @@ def style_plot():
             linewidth=params_l2['inner_gap_size'], color=params_l2['inner_gap_color'], zorder=50)
     ax.set(xlim=(bbox_utm[0], bbox_utm[2]), ylim=(bbox_utm[1], bbox_utm[3]))
 
-    ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=params_l1['color_fg'])
+    # ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=params_l1['color_fg'])
+    cmap = ListedColormap([[1, 1, 1, i] for i in np.linspace(0, .9, 50)])
+
+    ax.imshow([[0, 0], [0.1, 0.1], [0.3, 0.3], [0.7, 0.7], [1, 1], [1, 1], [1, 1]], extent=(bbox_utm[0], bbox_utm[2], bbox_utm[1], bbox_utm[1] + .4*(bbox_utm[3]-bbox_utm[1])), interpolation='bilinear', cmap=cmap, zorder=60)
+    ax.text((bbox_utm[0]+bbox_utm[2])/2, bbox_utm[1] + .14*(bbox_utm[3]-bbox_utm[1]), location['name'], horizontalalignment='center', verticalalignment='center', fontsize=60, weight=550, zorder=61)
+    ax.plot([(bbox_utm[0]+bbox_utm[2])/2, (bbox_utm[0]+bbox_utm[2])/2], [bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), bbox_utm[1] + .07*(bbox_utm[3]-bbox_utm[1])], linewidth=1, color=rgb(0, 0, 0), zorder=61)
+    ax.text((.51*bbox_utm[0]+.49*bbox_utm[2]), bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), location['gpsn'], horizontalalignment='right', verticalalignment='center', fontsize=17, weight=150, zorder=61)
+    ax.text((.49*bbox_utm[0]+.51*bbox_utm[2]), bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), location['gpse'], horizontalalignment='left', verticalalignment='center', fontsize=17, weight=150, zorder=61)
+
+    ornament = plt.imread('Ornament.png')
+    ax.imshow(ornament,
+              extent=(bbox_utm[0]*.7+.3*bbox_utm[2], bbox_utm[0]*.3+.7*bbox_utm[2], bbox_utm[1] + .093*(bbox_utm[3]-bbox_utm[1]), bbox_utm[1] + .099*(bbox_utm[3]-bbox_utm[1])), zorder=61)
 
     print('\tdone', flush=True)
 
@@ -392,101 +409,140 @@ def style_plot():
 def save_plot():
     print('\tSaving...', end='', flush=True)
     fig.set_size_inches(params_l2['image_width_cm'] / 2.54, params_l2['image_height_cm'] / 2.54)
-    plt.savefig('{}.png'.format(location['name']), dpi=600)
+    Path(dir).mkdir(parents=True, exist_ok=True)
+    # plt.show()
+    plt.savefig('{}/{}.png'.format(dir, location['name']), dpi=600)
     print('\t{}.png saved!\n'.format(location['name']), flush=True)
 
 
 if __name__ == '__main__':
 
     # use 'custom_params' to override the default params in the following param dicts
-    custom_params = {'locations': [{'name': 'Your_Location_Name', 'address': 'Your_Location_Address'}],
-                     'color_fg': rgb(255, 30, 30)}
-    # use 'hide' to hide elements
-    hide = ['buildings', 'subway', 'tram', 'service']
+    custom_params = {'locations': [
+                                   {'name': 'WERL', 'address': 'Werl, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.5}
+                                   # ,{'name': 'HAGEN', 'address': 'Hagen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'DORTMUND', 'address': 'Dortmund, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'AACHEN', 'address': 'Aachen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'HERDECKE', 'address': 'Herdecke, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'WETTER', 'address': 'Wetter, Ruhr, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'MÜNSTER', 'address': 'Münster, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'BREMEN', 'address': 'Bremen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'PEKING', 'address': 'Peking, Forbidden City, China', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'OSLO', 'address': 'Oslo, Norway', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'BRISBANE', 'address': 'Brisbane, Australia', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   # ,{'name': 'RECKLINGHAUSEN', 'address': 'Recklinghausen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   ,{'name': 'TOKYO', 'address': 'Tokyo, Japan', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
+                                   ,{'name': 'HANGZHOU', 'address': 'Hangzhou, China', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
+                                   ,{'name': 'IPSWITCH', 'address': 'Ipswitch, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.3}
 
-    ####################################################################################################################
-    #                                       Level One Parameter                                                        #
-    ####################################################################################################################
-    params_l1 = {'locations': [{'name': 'Trump', 'address': 'Oval Office, Washington DC'},
-                               {'name': 'London', 'address': 'Onslow Sq 21, London, England'}],
-                 'km_distance_east': 8,
-                 'km_distance_north': 8,
-                 'color_fg': rgb(30, 30, 30),
-                 'color_bg': rgb(255, 255, 255)}
-    params_l1.update(custom_params)
-    ####################################################################################################################
-    #                                       Level Two Parameter                                                        #
-    ####################################################################################################################
-    params_l2 = {'water_color': rgb(120, 120, 255),
-                 'building_color': rgb(220, 220, 220),
-                 'road_color': params_l1['color_fg'],
-                 'rail_color': params_l1['color_fg'],
-                 'plot_bg_color': params_l1['color_bg'],
-                 'water_width_factor': 0.1,
-                 'road_width_max': 1.5,
-                 'rail_width_max': 0.2,
+
+                                   ],
+                 'km_distance': 9,
+                 'inner_gap_size': 0,
+                 'outer_gap_size': 0,
+                 'color_fg': rgb(20, 20, 20),
+                 'color_bg': rgb(255, 255, 255),
                  'image_width_cm': 20,
-                 'image_height_cm': 20,
-                 'outer_gap_size': 0.02,
-                 'outer_gap_color': params_l1['color_bg'],
-                 'frame_size': 1,
-                 'frame_color': params_l1['color_fg'],
-                 'inner_gap_size': 15,
-                 'inner_gap_color': params_l1['color_bg'],
-                 'print_title': False,
-                 'title_color': params_l1['color_fg'],
-                 'title_space': 0.08,
-                 'title_size': 40,
-                 'title_font': 'Segoe UI',
-                 'title_pad': 12}
-    params_l2.update(custom_params)
-    ####################################################################################################################
-    #                                    Level Three Parameter: Color                                                  #
-    ####################################################################################################################
-    params_l3 = {'motorway_c': params_l2['road_color'], 'motorway_link_c': params_l2['road_color'],
-                 'trunk_c': params_l2['road_color'], 'trunk_link_c': params_l2['road_color'],
-                 'primary_c': params_l2['road_color'], 'primary_link_c': params_l2['road_color'],
-                 'secondary_c': params_l2['road_color'], 'secondary_link_c': params_l2['road_color'],
-                 'tertiary_c': params_l2['road_color'], 'tertiary_link_c': params_l2['road_color'],
-                 'unclassified_c': params_l2['road_color'],
-                 'residential_c': params_l2['road_color'],
-                 'pedestrian_c': params_l2['road_color'],
-                 'living_street_c': params_l2['road_color'],
-                 'cycleway_c': params_l2['road_color'],
-                 'service_c': params_l2['road_color'],
-                 'rail_c': params_l2['rail_color'],
-                 'subway_c': params_l2['rail_color'],
-                 'tram_c': params_l2['rail_color'],
-                 'water_c': params_l2['water_color'],
-                 'building_c': params_l2['building_color']}
-    params_l3.update(custom_params)
-    ####################################################################################################################
-    #                                    Level Three Parameter: Line width                                             #
-    ####################################################################################################################
-    line_widths = {'motorway_lw': params_l2['road_width_max'], 'motorway_link_lw': params_l2['road_width_max'] * 0.9,
-                   'trunk_lw': params_l2['road_width_max'] * 0.9, 'trunk_link_lw': params_l2['road_width_max'] * 0.8,
-                   'primary_lw': params_l2['road_width_max'] * 0.8,
-                   'primary_link_lw': params_l2['road_width_max'] * 0.7,
-                   'secondary_lw': params_l2['road_width_max'] * 0.75,
-                   'secondary_link_lw': params_l2['road_width_max'] * 0.65,
-                   'tertiary_lw': params_l2['road_width_max'] * 0.75,
-                   'tertiary_link_lw': params_l2['road_width_max'] * 0.65,
-                   'unclassified_lw': params_l2['road_width_max'] * 0.4,
-                   'residential_lw': params_l2['road_width_max'] * 0.4,
-                   'pedestrian_lw': params_l2['road_width_max'] * 0.35,
-                   'living_street_lw': params_l2['road_width_max'] * 0.3,
-                   'service_lw': params_l2['road_width_max'] * 0.2,
-                   'cycleway_lw': params_l2['road_width_max'] * 0.15,
-                   'rail_lw': params_l2['rail_width_max'],
-                   'subway_lw': params_l2['rail_width_max'] * 0.5,
-                   'tram_lw': params_l2['rail_width_max'] * 0.3}
-    params_l3.update(line_widths)
-    params_l3.update(custom_params)
-    ####################################################################################################################
-    #                                                End of Input                                                      #
-    ####################################################################################################################
-
-    for i, location in enumerate(params_l1['locations']):
+                 'image_height_cm': 30,
+                 'frame_size': 0,
+                 'road_width_max': 2,
+                 'print_title': False}
+    # use 'hide' to hide elements
+    hide = ['buildings', 'subway', 'tram', 'service', 'rails', 'water']
+    # hide = ['subway', 'tram', 'service']
+    custom_params['km_distance_east'] = 20
+    custom_params['km_distance_north'] = 30
+    #################################################################
+    dir = datetime.datetime.now().strftime("%b%d_%H-%M-%S")
+    custom_params_in = custom_params
+    for i, location in enumerate(custom_params_in['locations']):
+        custom_params = custom_params_in
+        ####################################################################################################################
+        #                                       Level One Parameter                                                        #
+        ####################################################################################################################
+        params_l1 = {'locations': [{'name': 'Trump', 'address': 'Oval Office, Washington DC'},
+                                   {'name': 'London', 'address': 'Onslow Sq 21, London, England'}],
+                     'km_distance_east': 8,
+                     'km_distance_north': 8,
+                     'color_fg': rgb(255, 30, 30),
+                     'color_bg': rgb(255, 255, 255)}
+        params_l1.update(custom_params)
+        ####################################################################################################################
+        #                                       Level Two Parameter                                                        #
+        ####################################################################################################################
+        params_l2 = {'water_color': rgb(140, 140, 140),
+                     'building_color': rgb(240, 240, 240),
+                     'road_color': params_l1['color_fg'],
+                     'rail_color': params_l1['color_fg'],
+                     'plot_bg_color': params_l1['color_bg'],
+                     'water_width_factor': 0.1,
+                     'road_width_max': 1.5,
+                     'rail_width_max': 0.2,
+                     'image_width_cm': 20,
+                     'image_height_cm': 20,
+                     'outer_gap_size': 0.02,
+                     'outer_gap_color': params_l1['color_bg'],
+                     'frame_size': 1,
+                     'frame_color': params_l1['color_fg'],
+                     'inner_gap_size': 15,
+                     'inner_gap_color': params_l1['color_bg'],
+                     'print_title': False,
+                     'title_color': params_l1['color_fg'],
+                     'title_space': 0.08,
+                     'title_size': 40,
+                     'title_font': 'Segoe UI',
+                     'title_pad': 12}
+        params_l2.update(custom_params)
+        ####################################################################################################################
+        #                                    Level Three Parameter: Color                                                  #
+        ####################################################################################################################
+        params_l3 = {'motorway_c': params_l2['road_color'], 'motorway_link_c': params_l2['road_color'],
+                     'footway_c': rgb(160, 160, 160), 'track_c': rgb(160, 160, 160),
+                     'trunk_c': params_l2['road_color'], 'trunk_link_c': params_l2['road_color'],
+                     'primary_c': params_l2['road_color'], 'primary_link_c': params_l2['road_color'],
+                     'secondary_c': params_l2['road_color'], 'secondary_link_c': params_l2['road_color'],
+                     'tertiary_c': params_l2['road_color'], 'tertiary_link_c': params_l2['road_color'],
+                     'unclassified_c': params_l2['road_color'],
+                     'residential_c': params_l2['road_color'],
+                     'pedestrian_c': params_l2['road_color'],
+                     'living_street_c': params_l2['road_color'],
+                     'cycleway_c': params_l2['road_color'],
+                     'service_c': params_l2['road_color'],
+                     'rail_c': params_l2['rail_color'],
+                     'subway_c': params_l2['rail_color'],
+                     'tram_c': params_l2['rail_color'],
+                     'water_c': params_l2['water_color'],
+                     'building_c': params_l2['building_color']}
+        params_l3.update(custom_params)
+        ####################################################################################################################
+        #                                    Level Three Parameter: Line width                                             #
+        ####################################################################################################################
+        line_widths = {'motorway_lw': params_l2['road_width_max']*1.8, 'motorway_link_lw': params_l2['road_width_max'] * 1.1,
+                        'footway_lw': params_l2['road_width_max']*0.15, 'track_lw': params_l2['road_width_max']*0.15,
+                       'trunk_lw': params_l2['road_width_max'] * 1.1, 'trunk_link_lw': params_l2['road_width_max'] * 1,
+                       'primary_lw': params_l2['road_width_max'] * 1.1,
+                       'primary_link_lw': params_l2['road_width_max'] * 1,
+                       'secondary_lw': params_l2['road_width_max'] * 0.75,
+                       'secondary_link_lw': params_l2['road_width_max'] * 0.65,
+                       'tertiary_lw': params_l2['road_width_max'] * 0.75,
+                       'tertiary_link_lw': params_l2['road_width_max'] * 0.65,
+                       'unclassified_lw': params_l2['road_width_max'] * 0.4,
+                       'residential_lw': params_l2['road_width_max'] * 0.4,
+                       'pedestrian_lw': params_l2['road_width_max'] * 0.35,
+                       'living_street_lw': params_l2['road_width_max'] * 0.3,
+                       'service_lw': params_l2['road_width_max'] * 0.2,
+                       'cycleway_lw': params_l2['road_width_max'] * 0.15,
+                       'rail_lw': params_l2['rail_width_max'],
+                       'subway_lw': params_l2['rail_width_max'] * 0.5,
+                       'tram_lw': params_l2['rail_width_max'] * 0.3}
+        params_l3.update(line_widths)
+        params_l3.update(custom_params)
+        ####################################################################################################################
+        #                                                End of Input                                                      #
+        ####################################################################################################################
+    # for i, location in enumerate(params_l1['locations']):
+        custom_params = custom_params_in
+        custom_params.update(location)
         print('Processing {} of {}: {}'.format(i + 1, len(params_l1['locations']), location['name']), flush=True)
 
         fig, ax = generate_plot_skeleton()
