@@ -8,10 +8,20 @@ import random
 import numpy as np
 import datetime
 from pathlib import Path
+import time
+from tqdm import tqdm
+import pickle
+import os
+import json
 
 
 def rgb(r, g, b):
     return r / 255, g / 255, b / 255
+
+
+def wait_for(x):
+    for i in tqdm(range(60)):
+        time.sleep(1)
 
 
 def generate_plot_skeleton():
@@ -58,10 +68,11 @@ def get_bounding_box(address):
 
     # ['highway' !~ 'footway']
     # ['highway' !~ 'track']
+
+
 def query_osm_data_via_overpass(query_type):
     # To get only roads within a city relation see: https://gist.github.com/4gus71n/26589a508d8deca333bb05928fd4beb0
     # https://overpass-turbo.eu/#
-    print('\t Query overpass...', end='', flush=True)
 
     queries = {'roads': """
 [timeout:900][out:json][bbox: {}, {}, {}, {}];
@@ -141,10 +152,38 @@ out;""",
 out;"""}
 
     api = overpy.Overpass()
-    data = api.query(queries[query_type].format(*bbox_wgs84))
+    if query_type == 'buildings':
+        print('\t Query overpass 1/3...', end='', flush=True)
 
-    print('data received.', end='', flush=True)
-    return data
+        # boxes = [south, west, north, east]
+        step_size = (bbox_wgs84[2] - bbox_wgs84[0]) / 3
+        bbox_wgs84_top = [bbox_wgs84[2] - step_size, bbox_wgs84[1], bbox_wgs84[2], bbox_wgs84[3]]
+        bbox_wgs84_mid = [bbox_wgs84[2] - 2*step_size, bbox_wgs84[1], bbox_wgs84[2] - step_size, bbox_wgs84[3]]
+        bbox_wgs84_bot = [bbox_wgs84[2] - 3*step_size, bbox_wgs84[1], bbox_wgs84[2] - 2*step_size, bbox_wgs84[3]]
+
+        data_top = api.query(queries[query_type].format(*bbox_wgs84_top))
+
+        wait_for(2000)
+        print('\t2/3...', end='', flush=True)
+        data_mid = api.query(queries[query_type].format(*bbox_wgs84_mid))
+        wait_for(2000)
+        print('\t3/3...', end='', flush=True)
+        data_bot = api.query(queries[query_type].format(*bbox_wgs84_bot))
+
+        print('data received.', end='', flush=True)
+
+        return data_top, data_mid, data_bot
+    else:
+
+
+        print('\t Query overpass...', end='', flush=True)
+
+        data = api.query(queries[query_type].format(*bbox_wgs84))
+        #with open('data/' + filename + '.json', 'wb') as bin_file:
+        #    data = json.dump(data, bin_file)
+
+        print('data received.', end='', flush=True)
+        return data
 
 
 def convert_way_to_utm(way):
@@ -232,20 +271,58 @@ def concatenate_borders_as_utm(data, relation, borders, added):
     return easts, norths
 
 
+def load_from_disk(query_type):
+    filename = location['address'][0:20] + '_' + str(int(custom_params['km_distance_north'])) + '_' \
+               + str(int(custom_params['km_distance_east'])) + "_" + query_type + '.bin'
+    filename = filename.replace(' ', '')
+    file_on_disk = ''
+    saved_files = os.listdir('./data')
+    for file in saved_files:
+        loc, north, east, q_type = file[:-4].split('_')
+        if loc == location['address'][0:20].replace(' ', ''):
+            if int(north) >= int(custom_params['km_distance_north']):
+                if int(east) >= int(custom_params['km_distance_east']):
+                    if q_type == query_type:
+                        file_on_disk = file
+                        break
+    if file_on_disk == '':
+        return None
+    else:
+        print('\t Load from Disk...', end='', flush=True)
+        with open('data/' + file_on_disk, 'rb') as bin_file:
+            data = pickle.load(bin_file)
+        return data
+
+
+def save_to_file(data, query_type):
+    filename = location['address'][0:20] + '_' + str(int(custom_params['km_distance_north'])) + '_' \
+               + str(int(custom_params['km_distance_east'])) + "_" + query_type + '.bin'
+    filename = filename.replace(' ', '')
+    with open('data/' + filename, 'wb') as bin_file:
+        data = pickle.dump(data, bin_file)
+
+
 def process_roads():
     if 'roads' in hide:
         return {}
     print('\tRoads:', end='', flush=True)
 
-    data = query_osm_data_via_overpass('roads')
-    print('\tStart converting...', end='', flush=True)
+    roads = load_from_disk('roads')
+    if roads == None:
 
-    roads = {}
-    for way in data.ways:
-        easts, norths = convert_way_to_utm(way)
-        roads[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['highway']}
+        data = query_osm_data_via_overpass('roads')
+        print('\tStart converting...', end='', flush=True)
+
+        roads = {}
+        for way in data.ways:
+            easts, norths = convert_way_to_utm(way)
+            roads[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['highway']}
+
+        save_to_file(roads, 'roads')
     print('done.', flush=True)
     return roads
+
+
 
 
 def process_rails():
@@ -253,13 +330,18 @@ def process_rails():
         return {}
     print('\tRails:', end='', flush=True)
 
-    data = query_osm_data_via_overpass('rails')
-    print('\tStart converting...', end='', flush=True)
+    rails = load_from_disk('rails')
+    if rails == None:
 
-    rails = {}
-    for way in data.ways:
-        easts, norths = convert_way_to_utm(way)
-        rails[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['railway']}
+        data = query_osm_data_via_overpass('rails')
+        print('\tStart converting...', end='', flush=True)
+
+        rails = {}
+        for way in data.ways:
+            easts, norths = convert_way_to_utm(way)
+            rails[int(way.id)] = {'e': easts, 'n': norths, 'type': way.tags['railway']}
+
+        save_to_file(rails, 'rails')
     print('done.', flush=True)
     return rails
 
@@ -269,40 +351,47 @@ def process_water():
         return {}, {}
     print('\tWater:', end='', flush=True)
 
-    data = query_osm_data_via_overpass('water')
-    print('\tStart converting...', end='', flush=True)
+    water_islands = load_from_disk('water')
+    if water_islands == None:
 
-    water = {}
-    islands = {}
-    added = set()
+        data = query_osm_data_via_overpass('water')
+        print('\tStart converting...', end='', flush=True)
 
-    for relation in data.relations:
-        inner_borders, outer_borders = get_borders_from_relation(data, relation.members)
-        inner_border_sorted_loops = separate_and_sort_borders(inner_borders)
-        outer_borders_sorted_loops = separate_and_sort_borders(outer_borders)
+        water = {}
+        islands = {}
+        added = set()
 
-        for outer_loop in outer_borders_sorted_loops:
-            easts, norths = concatenate_borders_as_utm(data, relation, outer_loop, added)
-            water[int(relation.id) + len(water) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
+        for relation in data.relations:
+            inner_borders, outer_borders = get_borders_from_relation(data, relation.members)
+            inner_border_sorted_loops = separate_and_sort_borders(inner_borders)
+            outer_borders_sorted_loops = separate_and_sort_borders(outer_borders)
 
-        for inner_loop in inner_border_sorted_loops:
-            easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
-            islands[int(relation.id) + len(islands) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
+            for outer_loop in outer_borders_sorted_loops:
+                easts, norths = concatenate_borders_as_utm(data, relation, outer_loop, added)
+                water[int(relation.id) + len(water) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
 
-    for way in data.ways:
-        if way.id in added:
-            continue
-        if 'width' in way.tags.keys():
-            if not way.tags['width'].isdigit():
-                break
-            width = float(way.tags['width'])
-        elif 'natural' in way.tags.keys() and way.tags['natural'] == 'coastline':
-            width = 4
-        else:
-            width = 0
-        easts, norths = convert_way_to_utm(way)
-        water[int(way.id)] = {'e': easts, 'n': norths, 'w': width}
+            for inner_loop in inner_border_sorted_loops:
+                easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
+                islands[int(relation.id) + len(islands) + random.randint(0, 10000)] = {'e': easts, 'n': norths, 'w': 0}
 
+        for way in data.ways:
+            if way.id in added:
+                continue
+            if 'width' in way.tags.keys():
+                if not way.tags['width'].isdigit():
+                    break
+                width = float(way.tags['width'])
+            elif 'natural' in way.tags.keys() and way.tags['natural'] == 'coastline':
+                width = 4
+            else:
+                width = 0
+            easts, norths = convert_way_to_utm(way)
+            water[int(way.id)] = {'e': easts, 'n': norths, 'w': width}
+
+        save_to_file([water, islands], 'water')
+
+    else:
+        water, islands = water_islands
     print('done.', flush=True)
     return water, islands
 
@@ -312,31 +401,40 @@ def process_buildings():
         return {}, {}
     print('\tBuildings:', end='', flush=True)
 
-    data = query_osm_data_via_overpass('buildings')
-    print('\tStart converting...', end='', flush=True)
+    buildings_yards = load_from_disk('buildings')
+    if buildings_yards == None:
 
-    buildings = {}
-    yards = {}
-    added = set()
+        data_top, data_mid, data_bot = query_osm_data_via_overpass('buildings')
+        print('\tStart converting...', end='', flush=True)
 
-    for relation in data.relations:
-        inner_borders, outer_borders = get_borders_from_relation(data, relation.members)
-        inner_border_sorted_loops = separate_and_sort_borders(inner_borders)
-        outer_borders_sorted_loops = separate_and_sort_borders(outer_borders)
+        buildings = {}
+        yards = {}
+        added = set()
+        for data in [data_top, data_mid, data_bot]:
 
-        for outer_loop in outer_borders_sorted_loops:
-            easts, norths = concatenate_borders_as_utm(data, relation, outer_loop, added)
-            buildings[int(relation.id) + len(buildings) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
+            for relation in data.relations:
+                inner_borders, outer_borders = get_borders_from_relation(data, relation.members)
+                inner_border_sorted_loops = separate_and_sort_borders(inner_borders)
+                outer_borders_sorted_loops = separate_and_sort_borders(outer_borders)
 
-        for inner_loop in inner_border_sorted_loops:
-            easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
-            yards[int(relation.id) + len(yards) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
+                for outer_loop in outer_borders_sorted_loops:
+                    easts, norths = concatenate_borders_as_utm(data, relation, outer_loop, added)
+                    buildings[int(relation.id) + len(buildings) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
 
-    for way in data.ways:
-        if way.id in added:
-            continue
-        easts, norths = convert_way_to_utm(way)
-        buildings[int(way.id)] = {'e': easts, 'n': norths}
+                for inner_loop in inner_border_sorted_loops:
+                    easts, norths = concatenate_borders_as_utm(data, relation, inner_loop, added)
+                    yards[int(relation.id) + len(yards) + random.randint(0, 10000)] = {'e': easts, 'n': norths}
+
+            for way in data.ways:
+                if way.id in added:
+                    continue
+                easts, norths = convert_way_to_utm(way)
+                buildings[int(way.id)] = {'e': easts, 'n': norths}
+
+        save_to_file([buildings, yards], 'buildings')
+
+    else:
+        buildings, yards = buildings_yards
 
     print('done.', flush=True)
     return buildings, yards
@@ -360,11 +458,14 @@ def plot_map_data():
     for k, v in roads.items():
         if v['type'] not in hide and '{}_lw'.format(v['type']) in params_l3.keys():
             ax.plot(v['e'], v['n'], color=params_l3['{}_c'.format(v['type'])],
-                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=7 if v['type'] == 'footway' or v['type'] == 'track' else 9)
+                    linewidth=params_l3['{}_lw'.format(v['type'])], zorder=7 if v['type'] == 'footway' or v['type'] == 'track' else 11)
     for k, v in buildings.items():
         ax.fill(v['e'], v['n'], color=params_l3['building_c'], zorder=7)
+        ax.plot(v['e'], v['n'], color=params_l1['color_fg'], linewidth=params_l2['road_width_max'] * 0.1, zorder=8)
     for k, v in yards.items():
-        ax.fill(v['e'], v['n'], color=params_l2['plot_bg_color'], zorder=8)
+        ax.fill(v['e'], v['n'], color=params_l2['plot_bg_color'], zorder=9)
+        ax.plot(v['e'], v['n'], color=params_l1['color_fg'], linewidth=params_l2['road_width_max'] * 0.1, zorder=9)
+
 
     print('\tdone', flush=True)
 
@@ -392,16 +493,16 @@ def style_plot():
 
     # ax.set_xlabel(u'© OpenStreetMap contributors', fontsize=5, labelpad=4, loc='right', color=params_l1['color_fg'])
     cmap = ListedColormap([[1, 1, 1, i] for i in np.linspace(0, .9, 50)])
-
+    csfont = {'fontname': 'Kinetika Ultra'}
     ax.imshow([[0, 0], [0.1, 0.1], [0.3, 0.3], [0.7, 0.7], [1, 1], [1, 1], [1, 1]], extent=(bbox_utm[0], bbox_utm[2], bbox_utm[1], bbox_utm[1] + .4*(bbox_utm[3]-bbox_utm[1])), interpolation='bilinear', cmap=cmap, zorder=60)
-    ax.text((bbox_utm[0]+bbox_utm[2])/2, bbox_utm[1] + .14*(bbox_utm[3]-bbox_utm[1]), location['name'], horizontalalignment='center', verticalalignment='center', fontsize=60, weight=550, zorder=61)
+    ax.text((bbox_utm[0]+bbox_utm[2])/2, bbox_utm[1] + .12*(bbox_utm[3]-bbox_utm[1]), location['name'], horizontalalignment='center', verticalalignment='center', fontsize=60, weight=550, zorder=61, fontname='Bahnschrift')
     ax.plot([(bbox_utm[0]+bbox_utm[2])/2, (bbox_utm[0]+bbox_utm[2])/2], [bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), bbox_utm[1] + .07*(bbox_utm[3]-bbox_utm[1])], linewidth=1, color=rgb(0, 0, 0), zorder=61)
     ax.text((.51*bbox_utm[0]+.49*bbox_utm[2]), bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), location['gpsn'], horizontalalignment='right', verticalalignment='center', fontsize=17, weight=150, zorder=61)
     ax.text((.49*bbox_utm[0]+.51*bbox_utm[2]), bbox_utm[1] + .065*(bbox_utm[3]-bbox_utm[1]), location['gpse'], horizontalalignment='left', verticalalignment='center', fontsize=17, weight=150, zorder=61)
 
-    ornament = plt.imread('Ornament.png')
-    ax.imshow(ornament,
-              extent=(bbox_utm[0]*.7+.3*bbox_utm[2], bbox_utm[0]*.3+.7*bbox_utm[2], bbox_utm[1] + .093*(bbox_utm[3]-bbox_utm[1]), bbox_utm[1] + .099*(bbox_utm[3]-bbox_utm[1])), zorder=61)
+    #ornament = plt.imread('Ornament.png')
+    #ax.imshow(ornament,
+    #          extent=(bbox_utm[0]*.7+.3*bbox_utm[2], bbox_utm[0]*.3+.7*bbox_utm[2], bbox_utm[1] + .093*(bbox_utm[3]-bbox_utm[1]), bbox_utm[1] + .099*(bbox_utm[3]-bbox_utm[1])), zorder=61)
 
     print('\tdone', flush=True)
 
@@ -411,7 +512,7 @@ def save_plot():
     fig.set_size_inches(params_l2['image_width_cm'] / 2.54, params_l2['image_height_cm'] / 2.54)
     Path(dir).mkdir(parents=True, exist_ok=True)
     # plt.show()
-    plt.savefig('{}/{}.png'.format(dir, location['name']), dpi=600)
+    plt.savefig('{}/{}_{}_{}.png'.format(dir, location['name'], params_l1['km_distance_north'], params_l1['km_distance_east']), dpi=600)
     print('\t{}.png saved!\n'.format(location['name']), flush=True)
 
 
@@ -419,8 +520,18 @@ if __name__ == '__main__':
 
     # use 'custom_params' to override the default params in the following param dicts
     custom_params = {'locations': [
-                                   {'name': 'WERL', 'address': 'Werl, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.5}
-                                   # ,{'name': 'HAGEN', 'address': 'Hagen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
+                                   #{'name': 'WERL', 'address': 'Werl, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.6},
+                                   #{'name': 'VÖLLINGHAUSEN', 'address': 'Wamel, Möhnesee, Germany', 'gpsn': '51.3546°N', 'gpse': '8.1753°E', 'road_width_max': 1.6},
+                                   {'name': 'MÖHNESEE', 'address': 'Hoher Stoß, Möhnesee, Germany', 'gpsn': '51.3546°N', 'gpse': '8.1753°E', 'road_width_max': 1.6},
+                                    #{'name': 'MÜNCHEN', 'address': 'Munich, Germany', 'gpsn': '48.1372°N', 'gpse': '11.5755°E'}
+                                    #{'name': 'HEVEN', 'address': 'Heven, Germany', 'gpsn': '51.2625°N', 'gpse': '7.1831°E'}
+                                    #{'name': 'DORTMUND', 'address': 'Dortmund, Germany', 'gpsn': '51.5135°N', 'gpse': '7.4652°E'}
+                                    #{'name': 'LÜNEBURG', 'address': 'Lüneburg, Germany', 'gpsn': '53.2464°N', 'gpse': '10.4115°E'}
+                                    #{'name': 'BERLIN', 'address': 'Berlin, Germany', 'gpsn': '52.3112°N', 'gpse': '13.4049°E'}
+                                    #{'name': 'SOEST', 'address': 'Soest, Germany', 'gpsn': '51.5711°N', 'gpse': '8.1057°E'}
+                                    #{'name': 'GÖTTINGEN', 'address': 'Göttingen, Germany', 'gpsn': '51.5412°N', 'gpse': '9.9158°E'}
+                                    #{'name': 'PADERBORN', 'address': 'Paderborn, Germany', 'gpsn': '51.4308°N', 'gpse': '8.4517°E'}
+                                    # ,{'name': 'HAGEN', 'address': 'Hagen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
                                    # ,{'name': 'DORTMUND', 'address': 'Dortmund, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
                                    # ,{'name': 'AACHEN', 'address': 'Aachen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
                                    # ,{'name': 'HERDECKE', 'address': 'Herdecke, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
@@ -431,10 +542,9 @@ if __name__ == '__main__':
                                    # ,{'name': 'OSLO', 'address': 'Oslo, Norway', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
                                    # ,{'name': 'BRISBANE', 'address': 'Brisbane, Australia', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
                                    # ,{'name': 'RECKLINGHAUSEN', 'address': 'Recklinghausen, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E'}
-                                   ,{'name': 'TOKYO', 'address': 'Tokyo, Japan', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
-                                   ,{'name': 'HANGZHOU', 'address': 'Hangzhou, China', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
-                                   ,{'name': 'IPSWITCH', 'address': 'Ipswitch, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.3}
-
+                                   #,{'name': 'TOKYO', 'address': 'Tokyo, Japan', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
+                                   #,{'name': 'HANGZHOU', 'address': 'Hangzhou, China', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': .8}
+                                   #,{'name': 'IPSWITCH', 'address': 'Ipswitch, Germany', 'gpsn': '51.5507°N', 'gpse': '7.8829°E', 'road_width_max': 1.3}
 
                                    ],
                  'km_distance': 9,
@@ -445,13 +555,14 @@ if __name__ == '__main__':
                  'image_width_cm': 20,
                  'image_height_cm': 30,
                  'frame_size': 0,
-                 'road_width_max': 2,
+                 'road_width_max': 1.6,
                  'print_title': False}
     # use 'hide' to hide elements
-    hide = ['buildings', 'subway', 'tram', 'service', 'rails', 'water']
-    # hide = ['subway', 'tram', 'service']
-    custom_params['km_distance_east'] = 20
-    custom_params['km_distance_north'] = 30
+    # hide = ['buildings', 'subway', 'tram', 'service', 'rails', 'water']
+    hide = ['subway', 'tram', 'service']
+    custom_params['km_distance_north'] = 6
+    custom_params['km_distance_east'] = 4
+    custom_params['building_color'] = rgb(225, 225, 225)
     #################################################################
     dir = datetime.datetime.now().strftime("%b%d_%H-%M-%S")
     custom_params_in = custom_params
@@ -518,7 +629,7 @@ if __name__ == '__main__':
         #                                    Level Three Parameter: Line width                                             #
         ####################################################################################################################
         line_widths = {'motorway_lw': params_l2['road_width_max']*1.8, 'motorway_link_lw': params_l2['road_width_max'] * 1.1,
-                        'footway_lw': params_l2['road_width_max']*0.15, 'track_lw': params_l2['road_width_max']*0.15,
+                       'footway_lw': params_l2['road_width_max']*0.15, 'track_lw': params_l2['road_width_max']*0.15,
                        'trunk_lw': params_l2['road_width_max'] * 1.1, 'trunk_link_lw': params_l2['road_width_max'] * 1,
                        'primary_lw': params_l2['road_width_max'] * 1.1,
                        'primary_link_lw': params_l2['road_width_max'] * 1,
@@ -548,9 +659,15 @@ if __name__ == '__main__':
         fig, ax = generate_plot_skeleton()
 
         bbox_wgs84, bbox_utm = get_bounding_box(location['address'])
+        param = [location, custom_params['km_distance_north'], custom_params['km_distance_east']]
+        #wait_for(2000)
+
         roads = process_roads()
+        #wait_for(2000)
         water, islands = process_water()
+        wait_for(2000)
         buildings, yards = process_buildings()
+        wait_for(2000)
         rails = process_rails()
 
         plot_map_data()
